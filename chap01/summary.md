@@ -101,8 +101,45 @@ ES에서의 검색은 SQL보다 유연한데, 가령 SQL에서 검색시 대소�
 
 '검색엔진' 이란 단어가 포함된 문서를 찾아야 한다고 하면 일반적으로 처음부터 끝까지 모든 문서를 읽어야만 원하는 결과를 찾을수 있지만, 역색인 구조에서는 해당 단어만 찾으면 단어가 포함된 모든 문서의 위치를 알 수 있기에 빠르게 찾을수 있다.  
 </br>
-**확장성과 가용성**h
+**확장성과 가용성**  
 엘라스틱서치를 분산 구성해서 확장한다면 대량의 문서를 좀 더 효율적으로 처맇라 수 있다. 분산 환경에서 데이터는 샤드라는 작은 단위로 나뉘어 제공되며, 인덱스를 만ㄷ르 때마다 샤드의 수를 조절할 수 있따. 이를 통해 데이터의 종류와 성격에 따라 데이터를 분산해서 빠르게 처리할 수 있다.
-
+</br>
+### 엘라스틱 서치의 약점  
+1. 실시간이 아니다. 
+2. 트랜잭션과 롤백 기능을 제공하지 않는다. 
+3. 데이터의 업데이트를 제공하지 않는다. (문서를 삭제후 재생성 해내므로 업데이트에 많은 자원소모)
 
 ## 실습 환경 구축
+
+### 엘라스틱서치 설치
+
+1. 자바 설치 - jdk 1.8이상 추천함.
+2. ES 설치  
+책에 나온 버전인 6.4.x버전을 설치할 것인데, 이유는 책에 나온 내용 그대로 따라가는데 이상이 없기 위함이고 둘째로는, 회사에서도 지금 6.x대 버전을 사용하고 있기 때문이다. 
+
+설치후 $bin/elasticsearch 실행후 웹브라우저에 콘솔에 뜬 주소를 들어가보면 다음과같이 정보를 보여준다.
+![es](result.png)
+
+es다운로드 https://www.elastic.co/kr/downloads/past-releases/elasticsearch-6-4-3  
+es 6.4.3으로 빌드된 커스텀 플러그인 다운로드 https://github.com/javacafe-project/elastic-book-etc/raw/master/plugin/javacafe-analyzer-6.4.3.zip  
+커스텀 플러그인 소스코드 https://github.com/javacafe-project/elasticsearch-plugin
+
+elasticsearch.yml 설정
+```
+cluster.name: javacafe-cluster
+node.name: javacafe-node1
+path.repo: ["/Users/we/Documents/study/es/book_backup/search_example", "/Users/we/Documents/study/es/book_backup/agg_example"]
+network.host: 0.0.0.0
+http.port: 9200
+transport.tcp.port: 9300
+node.master: true
+node.data: true
+```
+
+키바나 다운로드 : https://www.elastic.co/kr/downloads/kibana
+
+다운로드후에 압축풀고 config디렉터리를 열어서 kibana.yml에 다음 내용을 추가하거나 주석을 해제한다.
+```
+elasticsearch.url: "http://localhost:9200"
+```
+****
