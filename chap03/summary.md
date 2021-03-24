@@ -484,3 +484,543 @@ Tokenizer Filter는 분석기를 구성할 때 하나만 사용할 수 있으며
 
 TOKEN FILTER
 토큰화된 단어를 하나씩 필터링해서 사용자가 원하는 토큰으로 반환한다. 
+```
+
+#### 분석기 사용 방법
+엘라스틱서치는 루씬에 존재하는 기본 분석기를 별도의 정의 없이 사용할 수 있게 미리 정의해서 제공한다. 앞서 사용해본 "standard"라는 키워드는 루씬의 StandardAnalyzer를 의미한다. 이러한 분석기를 사용하기 위해 엘라스틱 서치에서는 _analyze API를 제공한다.
+
+
+**분석기를 이용한 분석**
+```
+POST _analyze
+{
+  "analyzer": "standard",
+  "text": "캐리비안의 해적"
+}
+```
+
+**필드를 이용한 분석**
+```
+POST movie_analyzer/_analyze
+{
+  "field": "title",
+  "text": "캐리비안의 해적"
+}
+```
+
+**색인과 검색 시 분석기를 각각 설정**
+
+인덱스를 생성할 때 색인용과 검색용 분석기를 각각 정의하고 적용하고자 하는 필드에 원하는 분석기를 지정하면 된다. 
+
+```
+PUT movie_analyzer 
+{
+  "settings" : {
+    "index": {
+      "number_of_shards": 5,
+      "number_of_replicas": 1
+    },
+    "analysis": {
+      "analyzer": {
+        "movie_lower_test_analyzer": {
+          "type":"custom",
+          "tokenizer": "standard",
+          "filter":[
+            "lowercase"
+          ]
+        },
+      "movie_stop_test_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter":[
+            "lowercase",
+            "english_stop"
+          ]
+        }
+      }, 
+      "filter": {
+        "english_stop":{
+          "type":"stop",
+          "stopwords":"_english_"
+        }
+      }
+    }
+  },
+  "mappings":{
+    "_doc":{
+      "properties": {
+        "title": {
+          "type":"text",
+          "analyzer":"movie_stop_test_analyzer",
+          "search_analyzer":"movie_lower_test_analyzer"
+        }
+      }
+    }
+  }
+}
+```
+
+### 대표적인 분석기
+
+**StandardAnalyzer**
+
+인덱스를 생성할 떄 settings에 analyzer를 정의하게 된다. 하지만 아무런 정의를 하지 않고 필드의 데이터 타입을 Text 데이터 타입으로 사용한다면 기본적으로 Standard Analyzer를 사용한다. 이 분석기는 공백 혹은 특수 기호를 기준으로 토큰을 분리하고 모든 문자를 소문자로 변경하는 토큰 필터를 사용한다.
+
+*Standard Analyzer 구성요소*
+|Tokenizer|TokenFilter|
+|---|---|
+|StandardTokenizer|Standard TokenFilter, Lower Case Token Filter|
+
+
+*Standard Analyzer 옵션*
+|파라미터|설명|
+|---|---|
+|max_token_length|최대 토큰 길이를 초과하는 토큰이 보일 경우 해당 length 간격으로 분할한다. 기본값은 255자|
+|stopwords|사전 정의된 불용어 사전을 사용한다. 기본값은 사용하지 않는다.|
+|stopwords_path|불용어가 포함된 파일을 사용할 경우의 서버의 경로로 사용한다.|
+
+
+**WhiteSpaceAnalyzer**
+
+공백 문자열을 기준으로 토큰을 분리하는 간단한 분석기이다.
+|Tokenizer|Token Filter|
+|---|---|
+|Whitespace Tokenizer|없음|
+
+**Keyword 분석기**
+
+전체 입력 문자열을 하나의 키워드처럼 분리한다. 
+
+### 전처리 필터
+엘라스틱서치에서 제공하는 분석기는 전처리필터(Character Filter)를 이용한 데이터 정제 후 토크나이저를 이용해 본격적인 토큰 분리 작업을 수행한다. 그런 다음, 생성된 토큰 리스트를 토큰 필터를 통해 재가공하는 3단계 방식으로 동작한다. 
+
+**HTML strip char 필터**
+
+문장에서 HTML을 제거하는 전처리 필터다.
+
+|파라미터|설명|
+|---|---|
+|escaped_tags|특정 태그만 삭제한다. 기본값으로 HTML 태그를 전부 삭제한다.|
+
+```
+PUT movie_html_analyzer 
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "html_strip_analyzer": {
+          "tokenizer":"keyword",
+          "char_filter": [
+            "html_strip_char_filter"
+          ]
+        }
+      },
+      "char_filter": {
+        "html_strip_char_filter": {
+          "type": "html_strip",
+          "escaped_tags": [
+            "b"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+*테스트*
+```
+POST movie_html_analyzer/_analyze
+{
+  "analyzer": "html_strip_analyzer",
+  "text": "<span>harry poter</span> and the <b>chamber</b> of Secrets"
+}
+```
+
+### 토크나이저 필터
+
+토크나이저 필터는 분석기를 구성하는 가장 핵심 구성요소다. 전처리 필터를 거쳐 토크나이저 필터로 문서가 넘어오면 해당 텍스트는 Tokenizer의 특성에 맞게 적절히 분해된다. 분석기에서 어떠한 토크나이저를 사용하느냐에 따라 분석기의 전체적인 성격이 결정된다. 
+
+분석기를 구성하는 데 가장 중요한 구성요소인 만큼 엘라스틱서치에서도 다양한 특성의 토크나이저를 제공한다. 
+
+**Standard 토크나이저**
+
+엘라스틱서치에서 일반적으로 사용하는 토크나이저로 대부분의 기호를 만나면 토큰으로 나눈다. 
+|파라미터|설명|
+|max_token_length|최대 토큰 길이를 초과하는 경우 해당 간격으로 토큰을 분할한다. 기본값은 255|
+
+```
+POST movie_analyzer/_analyze
+{
+  "tokenizer": "standard",
+  "text": "Harry Potter and the Chamber of Secrets"
+}
+```
+
+**Whitespace 토크나이저**
+
+공백을 만나면 토큰화한다.
+
+```
+POST movie_analyzer/_analyze
+{
+  "tokenizer": "whitespace",
+  "text": "Harry Potter and the Chamber of Secrets"
+}
+```
+
+**Ngram 토크나이저**
+
+Ngram은 기본적으로 한 글자씩 토큰화한다. Ngram에 특정 문자를 지정할 수도 있으며, 이 경우 지정된 문자의 목록 중 하나를 만날 때마다 단어를 자른다. 그 밖에도 다양한 옵션을 조합해서 자동완성을 만들때 유용하게 활용할 수 있다.
+
+*Ngram 토크나이저 옵션*
+|파라미터|설명|
+|---|---|
+|min_gram|Ngram을 적용할 문자의 최소 길이를 나타낸다. 기본값은 1|
+|max_gram|Ngram을 적용할 문자의 최대 길이를 나타낸다. 기본값은 2|
+|token_chars|토큰에 포함할 문자열을 지정한다. 다음과 같은 다양한 옵션을 제공한다.</br>letter(문자)</br>digit(숫자)</br>whitespace(공백)</br>punctuation(구두점)</br>symbol(특수기호)|
+
+Ngram 토크나이저를 테스트하기 위한 인덱스 생성
+```
+PUT movie_ngram_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "ngram_analyzer": {
+          "tokenizer": "ngram_tokenizer"
+        }
+      },
+      "tokenizer": {
+        "ngram_tokenizer": {
+          "type": "ngram",
+          "min_gram": 3,
+          "max_gram": 3,
+          "token_chars" : [
+            "letter"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Edge Ngram 토크나이저**
+지정된 문자의 목록 중 하나를 만날 때마다 시작 부분을 고정시켜 단어를 자르는 방식으로 사용하는 토크나이저다. 해당 Tokenizer 역시 자동 완성을 구현할 때 유용하게 활용할 수 있다. 
+
+*Edge Ngram 토크나이저 옵션*
+|파라미터|설명|
+|---|---|
+|min_gram|Ngram을 적용할 문자의 최소 길이를 나타낸다. 기본값은 1|
+|max_gram|Ngram을 적용할 문자의 최대 길이를 나타낸다. 기본값은 2|
+|token_chars|토큰에 포함할 문자열을 지정한다. 다음과 같은 다양한 옵션을 제공한다.</br>letter(문자)</br>digit(숫자)</br>whitespace(공백)</br>punctuation(구두점)</br>symbol(특수기호)|
+
+```
+PUT movie_engram_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "edge_ngram_analyzer": {
+          "tokenizer": "edge_ngram_tokenizer"
+        }
+      },
+      "tokenizer": {
+        "edge_ngram_tokenizer": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 10,
+          "token_chars": [
+            "letter"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+### 토큰 필터
+토큰 필터는 토크나이저에서 분리된 토큰들을 변형하거나 추가, 삭제할 때 사용하는 필터다. 토크나이저에 의해 토큰이 모두 분리되면 분리된 토큰은 배열 형태로 토큰 필터로 전달된다. 토크나이저에 의해 토큰이 모두 분리돼야 비로소 동작하기 때문에 독립적으로는 사용할 수 없다.
+
+**Ascii Folding 토큰필터**
+
+아스키 코드엥 해당하는 127개의 알파벳 숫자, 기호에 해당하지 않는 경우 문자를 ASCII 요소로 변경한다. 
+
+ex)
+```
+PUT movie_af_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "asciifolding_analyzer": {
+          "tokenizer": "standard",
+          "filter": [
+            "standard",
+            "asciifolding"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Lowercase 토큰 필터**
+
+이 토큰 필터는 토큰을 구성하는 전체 문자열을 소문자로 변환한다. 
+Lowercase 토큰 필터를 테스트하기 위해 다음과 같이 movie_lower_analyzer라는 인덱스를 하나 생성한다.
+```
+PUT movie_lower_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "lowercase_analyzer": {
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Uppercase 토큰 필터**
+
+이 토큰 필터는 토큰을 구성하는 전체 문자열을 대문자로 변환한다. 
+Uppercase 토큰 필터를 테스트하기 위해 다음과 같이 movie_upper_analyzer라는 인덱스를 하나 생성한다.
+```
+PUT movie_upper_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "uppercase_analyzer": {
+          "tokenizer": "standard",
+          "filter": [
+            "uppercase"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Stop토큰 필터**
+
+불용어로 등록할 사전을 구축해서 사용하는 필터를 의미한다. 인덱스로 만들고 싶지 않거나 검색되지 않게 하고 싶은 단어를 등록해서 해당 단어에 대한 불용어 사전을 구축한다.
+
+*Stop 토큰 필터 옵션*
+|파라미터|설명|
+|---|---|
+|stopwords|불용어를 매핑에 직접 등록해서 사용한다.|
+|stopwords_path|불용어 사전이 존재하는 경로를 지정한다. 해당 경로는 ES 서버가 있는 config폴더 안에 생성한다.|
+|ignore_case|true로 지정할 경우 모든 단어를 소문자로 변경해서 저장한다. 기본값은 false|
+
+```
+PUT movie_stop_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "stop_filter_analyzer": {
+          "tokenizer": "standard",
+          "filter": [
+            "standard",
+            "stop_filter"
+          ]
+        }
+      },
+      "filter": {
+        "stop_filter": {
+          "type": "stop",
+          "stopwords": [
+            "and",
+            "is",
+            "the"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Stemmer 토큰 필터**
+
+Stemming 알고리즘을 사용해 토큰을변형하는 필터다. 
+
+*Stemmer 토큰 필터 옵션*
+|파라미터|설명|
+|---|---|
+|name|english, light_english, minimal_english, possessive_english, porter2, lovins등 다른 나라의 언어도 사용가능하지만, 한글은 없다고 한다.|
+
+```
+PUT movie_stem_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "stemmer_eng_analyzer": {
+          "tokenizer": "standard",
+          "filter": [
+            "standard",
+            "lowercase",
+            "stemmer_eng_filter"
+          ]
+        }
+      },
+      "filter": {
+        "stemmer_eng_filter": {
+          "type": "stemmer",
+          "name": "english"
+        }
+      }
+    }
+  }
+}
+```
+
+**Synonym 토큰 필터**
+
+동의어를 처리할 수 있는 필터다. 
+
+*Synonym 토큰 필터 옵션*
+|파라미터|설명|
+|---|---|
+|synonyms|동의어로 사용할 단어를 등록한다.|
+|synonyms_path|파일로 관리할 경우 엘라스틱서치 서버의 config 폴더 아래에 생성한다.|
+
+```
+PUT movie_syno_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "synonym_analyzer": {
+          "tokenizer": "whitespace",
+          "filter": [
+            "synonym_filter"
+          ]
+        }
+      },
+      "filter": {
+        "synonym_filter": {
+          "type": "synonym",
+          "synonyms": [
+            "Harry => 해리"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+**Trim 토큰 필터**
+
+앞 뒤 공백을 제거하는 토큰 필터다.
+```
+PUT movie_trim_analyzer
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+         "trim_analyzer": {
+           "tokenizer": "keyword",
+           "filter": [
+             "lowercase",
+             "trim"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+### 동의어 사전
+
+토크나이저에 의해 토큰이 모두 분리되면 다양한 토큰 필터를 적용해 토큰을 가공할 수 있다. 토큰 필터를 이용하면 토큰을 변경하는 것은 물론이고 토큰을 추가하거나 삭제하는 것도 가능해진다. 엘라스틱 서치에서 제공하는 토큰 필터 중 Synonym 필터를 사용하면 동의어 처리가 가능해진다. 
+
+동의어는 검색 기능을 풍부하게 할 수 있게 도와주는 도구 중 하나다. 원문에 특정 단어가 존재하지 않떠라도 색인 데이터를 토큰화해서 저장할 때 동의어나 유의어에 해당하는 단어를 함께 저장해서 검색이 가능해지게 하는 기술이다. 예를 들어, "ElasticSearch"라는 단어가 포함된 원문이 필터를 통해 인덱스에 저장된다면 "엘라스틱서치"라고 검색했을 때 검색되지 않을 것이다. 하지만 동의어 기능을 이용해 색인 할 때 "엘라스틱서치"도 함께 저장한다면 "Elasticsearch"로도 검색이 가능하고 "엘라스틱서치"로도 검색이 가능해질 것이다.
+
+동의어를 추가하는 방식에는 크게 두 가지 방식이 있다.
+- 동의어를 매핑 설정 정보에 미리 파라미터로 등록하는 방식
+- 특정 파일을 별도로 생성해서 관리하는 방식
+
+엘라스틱서치에서 가장 까다로운 부분 중 하나가 바로 동의어를 관리하는 것이다. 검색엔진에서 다루는 분야가 많아지면 많아질수록 동의어의 수도 늘어난다. 분야별로 파일도 늘어날 것이고 그 안의 동의어 변환 규칙도 많아질 것이다. 실무에서는 이러한 동의어를 모아둔 파일들을 통칭하여 "동의어 파일" 이라고 한다. 
+
+**동의어 사전 만들기**
+
+```
+<엘라스틱서치 설치 디렉터리>/config/analysis/synonym.txt
+```
+이곳에는 다음의 두 가지 방법으로 데이터를 추가한다.
+- 동의어 추가
+- 동의어 치환
+
+
+**동의어 추가**
+
+동의어를 추가할 때 단어를 쉼표(,)로 분리해 등록하는 방법이다. 예를 들어, "Elasticsearch"와 "엘라스틱서치"를 동의어로 지정하고 싶다면 동의어 사전 파일에 "Elasticsearch,엘라스틱서치"라고 등록하면 된다.
+
+여기서 주의할 부분은 동의어 처리 기준은 앞서 동작한 토큰 필터의 종류가 무엇이고 어떤 작업을 했느냐에 따라 달라질 수 있다. 예를 들어, "Elasticsearch"라는 토큰은 "elasticsearch"라는 토큰으로 변경될 것이다. 이 경우 동의어로 등록한 "Elasticsearch"와 일치하지 않기 때문에 다른 토큰으로 인식해서 동의어가 적용되지 않을 것이다. 
+
+**동의어 치환하기**
+
+특정 단어를 어떤 단어로 변경하고 싶다면 동의어 치환 기능을 이용하면 된다. 동의어 치환은 동의어 추가와 구분하기 위해 화살표(=>)로 표신한다.
+
+*ES설치폴더/config/analyze/synonym.txt*
+```
+Elasticsearch, 앨라스틱서치
+Harry=>해리
+```
+
+```
+PUT movie_analyzer2
+{
+  "settings": {
+    "index": {
+      "analysis": {
+        "analyzer": {
+          "synonym_analyzer": {
+            "tokenizer": "standard",
+            "filter": [
+              "lowercase",
+              "synonym_filter"
+            ]
+          }
+        },
+        "filter": {
+          "synonym_filter": {
+            "type": "synonym",
+            "ignore_case": "true",
+            "synonyms_path": "analysis/synonym.txt"
+          }
+        }
+      }
+    }
+  }
+}
+```
+*테스트*
+```
+POST movie_analyzer2/_analyze
+{
+  "analyzer": "synonym_analyzer",
+  "text": "Elasticsearch Harry Poter"
+}
+```
+
+*인덱스 reload하기*
+```
+POST movie_analyzer2/_close
+POST movie_analyzer2/_open
+```
