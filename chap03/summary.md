@@ -1024,3 +1024,367 @@ POST movie_analyzer2/_analyze
 POST movie_analyzer2/_close
 POST movie_analyzer2/_open
 ```
+---
+## Document API 이해하기
+
+엘라스틱서치에서는 인덱스 관리를 목적으로 Document API를 제공하는데, 이를 이용해 문서를 조회하거나 추가, 수정, 삭제 등의 작업을 할 수 있다.
+```
+엘라스틱서치에서 제공하는 대표적인 Document API
+
+- Index API : 문서를 생성
+- Get API : 문서를 조회
+- Delete API : 문서를 삭제
+- Update API : 문서를 수정
+- Bulk API : 대량의 문서를 처리
+- Reindex API : 문서를 복사
+```
+
+### 문서 파라미터
+Document API에서는 다양한 파라미터를 지원한다.
+
+**문서 ID 자동 생성**
+
+문서를 생성할 때는 기본적으로 ID가 반드시 필요하다. 각 문서를 ID로 구분하기 때문이다. 만약 문서를 추가할 때 ID를 지정하지 않으면 엘라스틱서치가 자동으로 ID를 부여한다. 자동으로 생성되는 ID는 UUID 형태의 값으로 생성된다.
+
+```
+POST movie_dynamic/_doc/
+{
+  "movieCd": "20173732",
+  "movieNm": "살아남은 아이",
+  "movieNmEn": "Last Child",
+  "typeNm": "장편"
+}
+```
+
+요청 결과를 살펴보면 _id 필드에 UUID 값이 생성된 것을 알 수 있다.
+```
+{
+  "_index": "movie_dynamic",
+  "_type": "_doc",
+  "_id": "3kwHZ3gBdBfD5jyHYlsz",
+  "_version": 1,
+  "result": "created",
+  "_shards": {
+    "total": 2,
+    "successful": 1,
+    "failed": 0
+  },
+  "_seq_no": 0,
+  "_primary_term": 1
+}
+```
+
+**버전관리**
+
+색인된 모든 문서는 버전 값을 가지고 있다. 버전 정보는 색인할 때 결과에 포함되어 나타난다. 최초 1을 갖게 되고 문서에 변경이 일어날 때마다 버전 값이 증가한다. Update API를 이용할 경우 내부적으로 스냅숏을 생성해서 문서를 수정하고 인덱스에 다시 재색인하게 되는데, 이때 버전 정보를 이용한다. 스냅숏이 생성된 사이에 버전 값이 달라졌다면 실패로 처리한다. 
+
+```
+PUT movie_dynamic/_doc/1
+{
+  "nationAlt": "한국"
+}
+```
+처음 생성됐기 때문에 버전 1이 된다.
+```
+{
+  "_index": "movie_dynamic",
+  "_type": "_doc",
+  "_id": "1",
+  "_version": 1,
+  "result": "created",
+  "_shards": {
+    "total": 2,
+    "successful": 1,
+    "failed": 0
+  },
+  "_seq_no": 1,
+  "_primary_term": 1
+}
+```
+같은 아이디로 색인하게 될 경우 버전 2가 된다.
+```
+{
+  "_index": "movie_dynamic",
+  "_type": "_doc",
+  "_id": "1",
+  "_version": 2,
+  "result": "updated",
+  "_shards": {
+    "total": 2,
+    "successful": 1,
+    "failed": 0
+  },
+  "_seq_no": 2,
+  "_primary_term": 1
+}
+```
+
+**오퍼레이션 타입**
+
+일반적으로 ID가 이미 존재하는 경우에는 update 작업이 일어나고, ID가 없을 경우에는 create 작업이 일어난다. 만약 같은 ID로 색인이 반복적으로 이뤄질 경우에는 매번 update작업이 일어나게 된다. 이때 데이터가 존재할 경우 update하지 않고 색인이 실패하길 원한다면 어떻게 해야할까? 이럴 때 op_type을 사용하면 된다. Index API를 호출할 때 op_type파라미터를 이용하면 수행되는 작업의 유형을 강제로 지정할 수 있다. 
+```
+PUT movie_dynamic/_doc/1?op_type=create
+{
+  "movieCd": "20173732",
+  "movieNm": "살아남은 아이",
+  "movieNmEn": "Last Child",
+  "typeNm": "단편"
+}
+```
+
+**타임아웃 설정**
+
+일반적으로 색인을 요청할 때 대부분 즉시 처리된다. 하지만 이미 색인 작업이 진행중인 동안 추가적으로 색인 API가 호출될 경우에는 즉시 처리되지 못하고 일정 기간 대기하게 된다. 기본적으로 1분간 대기하게 되는데, 1분이 지날 경우에는 요청 자체가 실패한다. 이때 timeout 파라미터를 설정해서 대기 시간을 조절할 수 있다. 다음은 명시적으로 최대 5분간 다른 색인 API가 완료되기를 기다리는 예다. 
+
+```
+PUT movie_dynamic/_doc/1?timeout=5m
+{
+  "movieCd": "20173732",
+  "movieNm": "살아남은 아이",
+  "movieNmEn": "Last Child",
+  "typeNm": "장편"
+}
+```
+
+**인덱스 매핑 정보 자동 생성**
+
+Index API로 문서를 색인할 때 기존에 정의되지 않은 필드의 정보가 존재할 경우 어떻게 해야할지 결정해야 한다. 기본적으로 동적 매핑을 허용하기 떄문에 색인 즉시 새로운 필드가 생성된다.동적 매핑을 허용할 경우 원하지 않는 오류가 발생할 수도 있기 때문에 상황에 따라서는 기능을 비활성화해야 한다. 동적 매핑과 관련된 설정은 아래와 같다.
+
+```
+action.auto_create_index
+인덱스의 자동생성 여부를 설정한다. 기본값은 true
+
+index.mapper.dynamic
+동적 매핑 사용 여부를 설정한다. 기본값은 true
+```
+해당 옵션은 elasticsearch.yml에서 설정하면 된다. 
+
+### Index API
+
+Index API는 문서를 특정 인덱스에 추가하는 데 사용된다. 참고로 새로 추가된 문서는 버전 값으로 1이 부여되며, 문서가 업데이트 될 때마다 버전 값이 1 씩 증가한다. 
+
+```
+{
+  "_index": "movie_dynamic",
+  "_type": "_doc",
+  "_id": "1",
+  "_version": 4,
+  "result": "updated",
+  "_shards": {
+    "total": 2,
+    "successful": 1,
+    "failed": 0
+  },
+  "_seq_no": 4,
+  "_primary_term": 1
+}
+```
+_shards 항목은 몇 개의 샤드에서 명령이 수행됐는지에 대한 정보를 나타낸다. 여기서 total 항목은 복제돼야 하는 전체 샤드 개수를 나타내며, successful은 성공적으로 복제된 샤드 개수를 나타낸다. failed는 복제에 실패한 샤드 건수를 나타낸다. Index API는 최소 한 개 이상의 successful 항목이 있어야 성공한 것으로 간주한다. 
+
+### Get API 
+
+Get API는 특정 문서를 인덱스에서 조회할 때 사용하는 API다. 조회하고자 하는 문서의 ID를 명시적으로 지정해서 사용한다. 일반적으로 조회되는 문서의 내용은 _source항목으로 확인할 수 있다. 먼저 다음과 같은 인덱스를 생성한다.
+
+```
+PUT movie_dynamic
+{
+  "mappings": {
+    "_doc": {
+      "properties": {
+        "movieCd": {
+          "type": "text"
+        },
+        "movieNm": {
+          "type": "text"
+        },
+        "movieEnNm": {
+          "type": "text"
+        }
+      }
+    }
+  }
+}
+```
+
+ID가 1인 문서를 추가한다.
+```
+PUT movie_dynamic/_doc/1
+{
+  "movieCd": "20173732",
+  "movieNm": "살아남은 아이",
+  "movieEnNm": "Last Child"
+}
+```
+
+_source_exclude 옵션을 이용해 제외할 필드명을 지정할 수도 있다.
+```
+GET movie_dynamic/_doc/1?_source_exclude=movieNm
+```
+
+일반적인 상황에서는 모든 필드가 _source 필드으 ㅣ일부분으로 저장된다. 필드의 데이터가 작을 떄는 상관없지만 데이터가 한 권의 책 혹은 보고서처럼 매우 방대한 크기의 텍스트일 경우에는 문제가 될 수 있다. 이 경우 특정 필드를 _source 항목으로 제공되지 않도록 설정할 수 있는데 위에서처럼 _source_exclude를 사용하면 된다.
+```
+{
+  "_index": "movie_dynamic",
+  "_type": "_doc",
+  "_id": "1",
+  "_version": 1,
+  "found": true,
+  "_source": {
+    "movieCd": "20173732",
+    "movieEnNm": "Last Child"
+  }
+}
+```
+
+### Delete API
+Delete API를 이용하면 문서를 삭제할 수 있따. 그 결과, reuslt 항목에 "deleted"라는 값이 반환되며, version 값이 1만큼 증가한 것을 확인할 수 있다.
+
+```
+DELETE movie_dynamic/_doc/1
+```
+
+특정 문서가 아니라 인덱스 전체를 삭제하고 싶을 때는 인덱스명을 입력하면 된다. 단, 인덱스가 삭제되면 포함된 모든 문서가 삭제되고 다시는 복구할 수 없으므로 주의해야 한다.
+```
+DELETE movie_dynamic
+```
+
+### Delete By Query API 
+특정 인덱스에서 검색을 수행한 후 그 결과에 해당하는 문서만 삭제하고 싶을 경우 Delete By Query API를 사용하면 된다. 
+
+```
+PUT movie_dynamic/_doc/1
+{
+  "movieCd": "20173732",
+  "movieNm": "살아남은 아이",
+  "movieEnNm": "Last Child"
+}
+```
+
+Delete By Query API를 통해 movieCd가 "20173732"인 문서를 검색한 후 검색된 문서를 삭제한다.
+```
+POST movie_dynamic/_delete_by_query
+{
+  "query": {
+    "term": {
+      "movieCd": "20173732"
+    }
+  }
+}
+```
+
+결과로 다음과 같이 몇 건이 조회됐고, 몇 건의 데이터가 삭제됐는지 등의 정보를 보여준다.
+```
+{
+  "took": 41,
+  "timed_out": false,
+  "total": 1,
+  "deleted": 1,
+  "batches": 1,
+  "version_conflicts": 0,
+  "noops": 0,
+  "retries": {
+    "bulk": 0,
+    "search": 0
+  },
+  "throttled_millis": 0,
+  "requests_per_second": -1,
+  "throttled_until_millis": 0,
+  "failures": []
+}
+```
+
+Delete By Query API를 호출하면 해당 인덱스의 스냅숏을 불러와 스냅숏이 있는 문서의 버전을 기반으로 삭제를 수행한다. 만일 대량의 수정 작업이 수행중일 때 삭제를 수행하면 버전이 서로 일치하지 않게 되고 version_conflicts 항목을 통해 삭제에 실패한 문서의 건수를 출력한다. 
+
+### Update API
+
+Update API를 이용하면 스크립트를 바탕으로 문서를 수정할 수 있다. 스크립트를 통해 "ctx._source.필드명"과 같은 형태로 접근할 수 있다.
+
+먼저 색인을 한다.
+```
+PUT movie_dynamic/_doc/1
+{
+  "counter": 1000,
+  "movieEnNm": "LastChild"
+}
+```
+
+Update API를 이용해서 count 수를 늘려준다.
+```
+POST movie_dynamic/_doc/1/_update
+{
+  "script": {
+    "source": "ctx._source.counter += params.count",
+    "lang":"painless",
+    "params": {
+      "count": 1
+    }
+  }
+}
+```
+
+### Bulk API
+앞서 살펴본 Get/Delete/Update API는 한 번에 하나의 문서만을 대상으로 동작한다. 하지만 Bulk API를 이용하면 한 번의 API호출로 다수의 문서를 색인하거나 삭제할 수 있다. 특히 색인 작업의 경우 한 번에 처리함으로써 색인 속도를 크게 향상시킬 수 있다. 그러므로 대량 색인이 필요한 경우 bulk API를 사용하자.  
+
+```
+POST _bulk
+{ "index": {"_index": "movie_dynamic", "_type" : "_doc", "_id" : "1"}}
+{"title": "살아남은 아이"}
+{ "index": {"_index": "movie_dynamic", "_type" : "_doc", "_id" : "2"}}
+{"title": "해리포터와 비밀의 방"}
+{ "index": {"_index": "movie_dynamic", "_type" : "_doc", "_id" : "3"}}
+{"title": "어벤저스"}
+```
+
+### Reindex API
+
+Reindex API를 사용하는 가장 일반적인 상황은 한 인덱스에서 다른 인덱스로 문서를 복사할 때다. 다음은 movie_dynamic 인덱스의 문서를 movie_dynamic_new 인덱스로 복사하는 예다.
+
+```
+POST /_redindex
+{
+  "source": {
+    "index": "movie_dynamic"
+  },
+  "dest": {
+    "index": "movie_dynamic_new"
+  }
+}
+```
+
+source가 복사할 인덱스를 나타내고, dest가 복사될 인덱스를 나타낸다. 이 경우 movie_dynamic인덱스의 모든 문서가 movie_dynamic_new 인덱스로 복사된다.
+```
+POST _reindex
+{
+  "source": {
+    "index": "movie_dynamic",
+    "type": "_doc",
+    "query": {
+      "term": {
+        "title.keyword": "프렌즈: 몬스터섬의 비밀"
+      }
+    }
+  },
+  "dest": {
+    "index": "movie_dynamic_new"
+  }
+}
+```
+
+검색시 정렬 작업은 리소스를 많이 사용하기 떄문에 색인할 때 정렬된 상태로 색인할 수 있다면 좋을 것이다. Reindex API를 이용해 특정 문서를 복사해서 새로운 인덱스를 만들 때 새로운 정렬 방식으로 데이터를 정렬한 후 복사하는 것도 가능하다. 
+
+다음은 가장 많은 관객 수를 기준으로 정렬해서 movie_dynamic 인덱스에서 movie_dynamic_new 인덱스로 문서를 복사하는 예다.
+
+```
+POST _reindex
+{
+  "size": 10000,
+  "source": {
+    "index": "movie_dynamic",
+    "sort": {
+      "counter": "desc"
+    }
+  },
+  "dest": {
+    "index": "movie_dynamic_new"
+  }
+}
