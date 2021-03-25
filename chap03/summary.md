@@ -1387,4 +1387,9 @@ POST _reindex
   "dest": {
     "index": "movie_dynamic_new"
   }
+<<<<<<< HEAD
 }
+=======
+}
+```
+>>>>>>> 9c94e7c... chap03(#10) : 데이터 모델링

@@ -136,6 +136,31 @@ node.master: true
 node.data: true
 ```
 
+엘라스틱서치가 정상적으로 시작되면 path.repo에서 설정한 물리적인 스냅숏 데이터를 엘라스틱서치로 인식시켜야한다. path.repo에 설정된 두 개의 디렉토리 중에서 먼저 search_example 디렉터리의 데이터를 활성화해보자. 다음과 같은 명령어를 실행하면 search_exmaple데이터가 javacafe라는 이름의 논리적인 스냅숏으로 생성된다.
+```
+$ curl -XPUT 'http://localhost:9200/_snapshot/javacafe' -H 'Content-Type: application/json'  -d '{
+    "type": "fs",
+    "settings": {
+        "location": "/Users/we/Documents/study/es/book_backup/search_example",
+        "compress": true
+    }
+}'
+```
+
+```
+$ curl -XPUT 'http://localhost:9200/_snapshot/apache-web-log' -H 'Content-Type: application/json'  -d '{
+    "type": "fs",
+    "settings": {
+        "location": "/Users/we/Documents/study/es/book_backup/agg_example",
+        "compress": true
+    }
+}'
+
+$ curl -XGET 'http://localhost:9200/_snapshot/apache-web-log/_all
+```
+
+
+
 키바나 다운로드 : https://www.elastic.co/kr/downloads/kibana
 
 다운로드후에 압축풀고 config디렉터리를 열어서 kibana.yml에 다음 내용을 추가하거나 주석을 해제한다.
@@ -143,3 +168,5 @@ node.data: true
 elasticsearch.url: "http://localhost:9200"
 ```
 ****
+---
+
