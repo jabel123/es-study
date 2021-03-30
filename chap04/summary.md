@@ -629,3 +629,83 @@ GET movie_nested/_search
   }
 }
 ```
+
+## 부가적인 검색 API
+
+### 효율적인 검색을 위한 환경 설정
+
+검색 요청이 발생하면 엘라스틱서치는 모든 샤드에 검색 요청을 브로드캐스팅해서 전달하고 기다린다. 그리고 모든 샤드로부터 검색 결과가 도착하면 도착한 모든 결과를 조합해서 최종 질의 결과를 출력한다.
+
+이러한 동작 방식 때문에 제공되는 부가적인 환경설정값이 있다. 각자의 데이터 특성이나 검색 패턴에 따라 이러한 검색 설정 값을 적절한 값으로 수정한다면 좀 더 효율적인 클러스터 운영이 가능해진다.
+
+**동적 분배 방식의 샤드 선택**
+
+ES는 동일 데이터를 갖고있는 샤드가 여러개일 경우 그 중 하나만 선택해 검색하게 한다. 그리고 검색 요청의 적절 한 분배를 위해 기본적으로 라운드로빈 방식으 ㅣ알고리즘을 사용한다. 
+
+*동적으로 요청을 분배하도록 설정*
+```
+PUT _clsuter/settings
+{
+  "transient": {
+    "cluster.routing.use_adaptive_replica_selection": true
+  }
+}
+```
+
+*글로벌 타임아웃 설정*
+
+글로벌의 경우 기본적으로 무제한인데 이를 설정할 수 있다.
+
+```
+PUT _clsuter/settings
+{
+  "transient": {
+    "search.default_search_timeout": "1s"
+  }
+}
+```
+
+### Search Shards API
+
+Search Shards API를 이용하면 검색이 수행되는 노드 및 샤드에 대한 정보를 확인할 수 있다. 이러한 정보는 질의를 최적화하거나 질의가 정상적으로 수행되지 않을 때 문제를 해결하는 데 유용하게 활용할 수 있다. 
+
+```
+POST movie_search/_search_shards
+```
+
+
+### Multi Search API
+
+Multi Search API는 여러 건의 검색 요청을 통합해서 한 번에 요청하고 한 번에 결과를 종합해서 받을 때 사용되는 API다.
+
+```
+POST _msearch
+{"index": "movie_auto"}
+{"query": {"match_all:{}}, "from": 0, "size": 10}
+{"index": "movie_search"}
+{"query": {"match_all:{}}, "from": 0, "size": 10}
+```
+
+### Count API 
+
+문서의 개수를 구하는 API
+
+```
+POST movie_search/_count?q=prdtYear:2017
+```
+
+```
+POST movie_search/_count
+{
+  "query": {
+    "query_string": {
+      "default_field": "prdtYear",
+      "query": "2017"
+    }
+  }
+}
+```
+
+### Validate API
+
+Validate API를 사용하면 쿼리를 실행하기에 앞서 쿼리가 유효하게 작성됐는지 알 수 있다. 
